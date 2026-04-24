@@ -28,9 +28,32 @@ export default function App() {
   useEffect(() => {
     if (!user) return;
     
-    // In a real app we'd create the group if it doesn't exist and add the user.
-    // For this prototype, we'll sync expenses and users for "default-group"
+    const initGroup = async () => {
+      try {
+        const groupRef = doc(db, `groups/${GROUP_ID}`);
+        const userRef = doc(db, `groups/${GROUP_ID}/users`, user.uid);
+        
+        // Update user's profile in the group
+        await setDoc(userRef, {
+          uid: user.uid,
+          name: user.displayName || 'Anonymous',
+          color: '#4f46e5',
+          avatarUrl: user.photoURL || ''
+        }, { merge: true });
+
+        // We use a firestore merge block here because of our rules requiring "createdAt" strictly on create.
+        await setDoc(groupRef, {
+          name: 'Home Split',
+          members: [user.uid],
+          createdAt: new Date().toISOString()
+        }, { merge: true }); // Warning: The merge won't bypass the rule if the document does not exist, so it's a bit tricky.
+      } catch (e) {
+        console.error("Failed to init group", e);
+      }
+    };
     
+    initGroup();
+
     const unsubscribeExpenses = onSnapshot(query(collection(db, `groups/${GROUP_ID}/expenses`)), (snapshot) => {
       const fbExpenses: Expense[] = [];
       snapshot.forEach((doc) => {

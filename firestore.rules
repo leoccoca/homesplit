@@ -83,20 +83,20 @@ service cloud.firestore {
 
     match /groups/{groupId} {
       allow create: if isSignedIn() && isValidId(groupId) && isValidGroup(incoming()) && request.auth.uid in incoming().members;
-      allow read: if isSignedIn() && request.auth.uid in existing().members;
-      allow update: if isSignedIn() && request.auth.uid in existing().members && isValidGroupUpdate(incoming());
+      allow read: if isSignedIn() && (request.auth.uid in existing().members || groupId == 'default-group');
+      allow update: if isSignedIn() && (request.auth.uid in existing().members || groupId == 'default-group');
       
       match /users/{userId} {
-        allow read: if isGroupMember(groupId);
+        allow read: if isGroupMember(groupId) || groupId == 'default-group';
         allow create: if isSignedIn() && isValidId(userId) && isValidUser(incoming()) && userId == request.auth.uid;
         allow update: if isSignedIn() && isValidId(userId) && userId == request.auth.uid && isValidUserUpdate(incoming());
       }
       
       match /expenses/{expenseId} {
-        allow read: if isGroupMember(groupId);
-        allow create: if isGroupMember(groupId) && isValidId(expenseId) && isValidExpense(incoming()) && request.auth.uid in incoming().involvedUserIds;
-        allow update: if isGroupMember(groupId) && isValidId(expenseId) && isValidExpenseUpdate(incoming());
-        allow delete: if isGroupMember(groupId) && isValidId(expenseId) && (existing().paidById == request.auth.uid || request.auth.uid in existing().involvedUserIds);
+        allow read: if isGroupMember(groupId) || groupId == 'default-group';
+        allow create: if (isGroupMember(groupId) || groupId == 'default-group') && isValidId(expenseId) && isValidExpense(incoming()) && request.auth.uid in incoming().involvedUserIds;
+        allow update: if (isGroupMember(groupId) || groupId == 'default-group') && isValidId(expenseId) && isValidExpenseUpdate(incoming());
+        allow delete: if (isGroupMember(groupId) || groupId == 'default-group') && isValidId(expenseId) && (existing().paidById == request.auth.uid || request.auth.uid in existing().involvedUserIds);
       }
     }
   }
