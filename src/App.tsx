@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { mockCategories, mockExpenses } from './mockData';
 import { Expense, User, Category } from './types';
 import Dashboard from './components/Dashboard';
 import ExpensesList from './components/ExpensesList';
@@ -11,18 +10,13 @@ import { useAuth } from './contexts/AuthContext';
 import { collection, onSnapshot, query, setDoc, doc, deleteDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from './firebase';
 
-const initialUsers: User[] = [
-  { id: 'u1', name: 'You', color: '#4f46e5' }, // indigo-600
-  { id: 'u2', name: 'Roommate', color: '#0ea5e9' }, // sky-500
-];
-
 const GROUP_ID = "default-group"; // we just use a default group for now
 
 export default function App() {
   const { user } = useAuth();
-  const [users, setUsers] = useState<User[]>(initialUsers);
-  const [categories, setCategories] = useState<Category[]>(mockCategories);
-  const [expenses, setExpenses] = useState<Expense[]>(mockExpenses.filter(e => e.paidById === 'u1' || e.paidById === 'u2'));
+  const [users, setUsers] = useState<User[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [expenses, setExpenses] = useState<Expense[]>([]);
   const [activeTab, setActiveTab] = useState<'summary' | 'expenses' | 'people' | 'categories'>('summary');
   
   useEffect(() => {
@@ -59,9 +53,7 @@ export default function App() {
       snapshot.forEach((doc) => {
         fbExpenses.push(doc.data() as Expense);
       });
-      if (fbExpenses.length > 0) {
-        setExpenses(fbExpenses.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
-      }
+      setExpenses(fbExpenses.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
     }, (error) => {
       // It will throw permission denied early on because the group is not created, catching silently for mock data
       console.warn("Firestore sync error for expenses, using local state", error);
@@ -72,9 +64,7 @@ export default function App() {
       snapshot.forEach((doc) => {
         fbUsers.push(doc.data() as User);
       });
-      if (fbUsers.length > 0) {
-        setUsers(fbUsers);
-      }
+      setUsers(fbUsers);
     }, (error) => {
       console.warn("Firestore sync error for users, using local state", error);
     });
@@ -84,9 +74,7 @@ export default function App() {
       snapshot.forEach((doc) => {
         fbCategories.push(doc.data() as Category);
       });
-      if (fbCategories.length > 0) {
-        setCategories(fbCategories);
-      }
+      setCategories(fbCategories);
     }, (error) => {
       console.warn("Firestore sync error for categories, using local state", error);
     });
