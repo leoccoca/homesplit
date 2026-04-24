@@ -8,7 +8,7 @@ import PeopleTab from './components/PeopleTab';
 import CategoriesTab from './components/CategoriesTab';
 import { Wallet, List, Users, Tags } from 'lucide-react';
 import { useAuth } from './contexts/AuthContext';
-import { collection, onSnapshot, query, setDoc, doc, deleteDoc, updateDoc } from 'firebase/firestore';
+import { collection, onSnapshot, query, setDoc, doc, deleteDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from './firebase';
 
 const initialUsers: User[] = [
@@ -45,7 +45,7 @@ export default function App() {
         await setDoc(groupRef, {
           name: 'Home Split',
           members: [user.uid],
-          createdAt: new Date().toISOString()
+          createdAt: serverTimestamp()
         }, { merge: true }); // Warning: The merge won't bypass the rule if the document does not exist, so it's a bit tricky.
       } catch (e) {
         console.error("Failed to init group", e);
@@ -79,9 +79,22 @@ export default function App() {
       console.warn("Firestore sync error for users, using local state", error);
     });
 
+    const unsubscribeCategories = onSnapshot(query(collection(db, `groups/${GROUP_ID}/categories`)), (snapshot) => {
+      const fbCategories: Category[] = [];
+      snapshot.forEach((doc) => {
+        fbCategories.push(doc.data() as Category);
+      });
+      if (fbCategories.length > 0) {
+        setCategories(fbCategories);
+      }
+    }, (error) => {
+      console.warn("Firestore sync error for categories, using local state", error);
+    });
+
     return () => {
       unsubscribeExpenses();
       unsubscribeUsers();
+      unsubscribeCategories();
     };
   }, [user]);
 
@@ -92,7 +105,7 @@ export default function App() {
       try {
         await setDoc(doc(db, `groups/${GROUP_ID}/expenses`, expense.id), {
           ...expense,
-          createdAt: new Date().toISOString()
+          createdAt: serverTimestamp()
         });
       } catch (error) {
         // Just log, local state updated

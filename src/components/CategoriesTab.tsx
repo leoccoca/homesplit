@@ -3,9 +3,16 @@ import { Category, Expense } from '../types';
 import { Plus, Trash2, Edit2, Check, X, Tag } from 'lucide-react';
 import { IconMap } from './ExpensesList';
 
+import { doc, setDoc, deleteDoc, updateDoc } from 'firebase/firestore';
+import { db } from '../firebase';
+import { useAuth } from '../contexts/AuthContext';
+
+const GROUP_ID = "default-group";
+
 export default function CategoriesTab({ categories, setCategories, expenses }: { categories: Category[], setCategories: React.Dispatch<React.SetStateAction<Category[]>>, expenses: Expense[] }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
+  const { user } = useAuth();
   
   const [isAdding, setIsAdding] = useState(false);
   const [newName, setNewName] = useState('');
@@ -13,7 +20,7 @@ export default function CategoriesTab({ categories, setCategories, expenses }: {
 
   const presetColors = ['#ef4444', '#f97316', '#f59e0b', '#84cc16', '#22c55e', '#10b981', '#06b6d4', '#0ea5e9', '#3b82f6', '#6366f1', '#8b5cf6', '#d946ef', '#f43f5e', '#64748b'];
 
-  const handleAdd = () => {
+  const handleAdd = async () => {
     if (!newName.trim()) return;
     const newCategory: Category = {
       id: Math.random().toString(36).substr(2, 9),
@@ -21,22 +28,51 @@ export default function CategoriesTab({ categories, setCategories, expenses }: {
       color: newColor,
       icon: 'Tag'
     };
+    
+    // optimistic UI
     setCategories([...categories, newCategory]);
     setIsAdding(false);
     setNewName('');
+
+    if (user) {
+      try {
+        await setDoc(doc(db, `groups/${GROUP_ID}/categories`, newCategory.id), newCategory);
+      } catch (error) {
+        console.error("Failed to add category to FB", error);
+      }
+    }
   };
 
-  const handleRemove = (id: string, name: string) => {
+  const handleRemove = async (id: string, name: string) => {
     if (expenses.some(e => e.categoryId === id)) {
        alert(`Cannot remove ${name} because it is used in some expenses. Please change the category of those expenses first.`);
        return;
     }
     setCategories(categories.filter(c => c.id !== id));
+
+    if (user) {
+      try {
+        await deleteDoc(doc(db, `groups/${GROUP_ID}/categories`, id));
+      } catch (error) {
+        console.error("Failed to remove category from FB", error);
+      }
+    }
   };
 
-  const saveEdit = (id: string) => {
+  const saveEdit = async (id: string) => {
     if (editName.trim()) {
-       setCategories(categories.map(c => c.id === id ? { ...c, name: editName.trim() } : c));
+       const newNameValue = editName.trim();
+       setCategories(categories.map(c => c.id === id ? { ...c, name: newNameValue } : c));
+
+       if (user) {
+         try {
+           await updateDoc(doc(db, `groups/${GROUP_ID}/categories`, id), {
+             name: newNameValue
+           });
+         } catch (error) {
+           console.error("Failed to update category in FB", error);
+         }
+       }
     }
     setEditingId(null);
   };
