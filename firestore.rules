@@ -43,15 +43,15 @@ service cloud.firestore {
 
     function isValidUser(data) {
       // Allow overriding existing with affectedKeys later, so let's check basic structure
-      return data.keys().hasAll(['uid', 'name', 'color']) &&
-             data.uid is string && data.uid.size() <= 128 &&
+      return data.keys().hasAll(['id', 'name', 'color']) &&
+             data.id is string && data.id.size() <= 128 &&
              data.name is string && data.name.size() > 0 && data.name.size() <= 100 &&
              data.color is string && data.color.size() <= 20 &&
              (data.get('avatarUrl', '') is string);
     }
 
     function isValidUserUpdate(data) {
-      return data.uid == existing().uid &&
+      return data.id == existing().id &&
              data.name is string && data.name.size() > 0 && data.name.size() <= 100 &&
              data.color is string && data.color.size() <= 20;
     }
@@ -88,8 +88,9 @@ service cloud.firestore {
       
       match /users/{userId} {
         allow read: if isGroupMember(groupId) || groupId == 'default-group';
-        allow create: if isSignedIn() && isValidId(userId) && isValidUser(incoming()) && userId == request.auth.uid;
-        allow update: if isSignedIn() && isValidId(userId) && userId == request.auth.uid && isValidUserUpdate(incoming());
+        allow create: if isSignedIn() && isValidId(userId) && isValidUser(incoming()) && (userId == request.auth.uid || groupId == 'default-group');
+        allow update: if isSignedIn() && isValidId(userId) && (userId == request.auth.uid || groupId == 'default-group') && isValidUserUpdate(incoming());
+        allow delete: if isSignedIn() && isValidId(userId) && (userId == request.auth.uid || groupId == 'default-group');
       }
       
       match /expenses/{expenseId} {

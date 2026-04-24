@@ -35,7 +35,7 @@ export default function App() {
         
         // Update user's profile in the group
         await setDoc(userRef, {
-          uid: user.uid,
+          id: user.uid,
           name: user.displayName || 'Anonymous',
           color: '#4f46e5',
           avatarUrl: user.photoURL || ''
