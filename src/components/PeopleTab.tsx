@@ -4,6 +4,7 @@ import { UserPlus, Trash2, Edit2, Check, X } from 'lucide-react';
 import { doc, setDoc, deleteDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
+import AdminAccessControl from './AdminAccessControl';
 
 const GROUP_ID = "default-group";
 
@@ -13,7 +14,6 @@ export default function PeopleTab({ users, setUsers, expenses }: { users: User[]
   const { user } = useAuth();
 
   const handleAdd = async () => {
-    if (users.length >= 4) return;
     const colors = ['#4f46e5', '#0ea5e9', '#10b981', '#f59e0b', '#8b5cf6'];
     const existingColors = users.map(u => u.color);
     const color = colors.find(c => !existingColors.includes(c)) || colors[Math.floor(Math.random() * colors.length)];
@@ -75,12 +75,11 @@ export default function PeopleTab({ users, setUsers, expenses }: { users: User[]
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
         <div>
           <h2 className="text-xl font-bold tracking-tight text-slate-800">People</h2>
-          <p className="text-sm text-slate-500 mt-1">Add up to 4 roommates and customize their names.</p>
+          <p className="text-sm text-slate-500 mt-1">Add your roommates and customize their names.</p>
         </div>
         <button
           onClick={handleAdd}
-          disabled={users.length >= 4}
-          className={`px-4 py-2 text-white rounded-lg text-sm font-medium shadow-sm flex items-center gap-2 transition-colors w-full sm:w-auto justify-center ${users.length >= 4 ? 'bg-slate-300 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700'}`}
+          className={`px-4 py-2 text-white rounded-lg text-sm font-medium shadow-sm flex items-center gap-2 transition-colors w-full sm:w-auto justify-center bg-indigo-600 hover:bg-indigo-700`}
         >
           <UserPlus size={18} />
           Add Person
@@ -125,9 +124,7 @@ export default function PeopleTab({ users, setUsers, expenses }: { users: User[]
         ))}
       </div>
       
-      {users.length >= 4 && (
-        <p className="text-sm text-slate-500 text-center mt-4">You've reached the maximum of 4 people.</p>
-      )}
+      <AdminAccessControl />
     </div>
   );
 }
