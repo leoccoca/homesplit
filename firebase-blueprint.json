@@ -1,0 +1,71 @@
+{
+  "entities": {
+    "Group": {
+      "title": "Group",
+      "description": "A group of people sharing expenses",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Name of the group"
+        },
+        "members": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "List of user IDs who are members of this group"
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Timestamp of creation"
+        }
+      },
+      "required": ["name", "members", "createdAt"]
+    },
+    "User": {
+      "title": "User",
+      "description": "A user profile in a group",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "name": { "type": "string" },
+        "color": { "type": "string" },
+        "avatarUrl": { "type": "string" }
+      },
+      "required": ["uid", "name", "color"]
+    },
+    "Expense": {
+      "title": "Expense",
+      "description": "An expense in a group",
+      "type": "object",
+      "properties": {
+        "description": { "type": "string" },
+        "amount": { "type": "number" },
+        "paidById": { "type": "string" },
+        "categoryId": { "type": "string" },
+        "date": { "type": "string" },
+        "splitMode": { "type": "string" },
+        "isSettled": { "type": "boolean" },
+        "involvedUserIds": { 
+          "type": "array", 
+          "items": { "type": "string" }
+        },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["description", "amount", "paidById", "categoryId", "date", "splitMode", "involvedUserIds", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/groups/{groupId}": {
+      "schema": { "$ref": "#/entities/Group" },
+      "description": "The shared group"
+    },
+    "/groups/{groupId}/users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "Users inside the group"
+    },
+    "/groups/{groupId}/expenses/{expenseId}": {
+      "schema": { "$ref": "#/entities/Expense" },
+      "description": "Expenses belonging to the group"
+    }
+  }
+}
