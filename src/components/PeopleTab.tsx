@@ -1,17 +1,57 @@
 import React, { useState } from 'react';
 import { User, Expense } from '../types';
-import { UserPlus, Trash2, Edit2, Check, X } from 'lucide-react';
+import { UserPlus, Trash2, Edit2, Check, X, Link, Copy } from 'lucide-react';
 import { doc, setDoc, deleteDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
-import AdminAccessControl from './AdminAccessControl';
 
-const GROUP_ID = "default-group";
-
-export default function PeopleTab({ users, setUsers, expenses }: { users: User[], setUsers: React.Dispatch<React.SetStateAction<User[]>>, expenses: Expense[] }) {
+export default function PeopleTab({ users, setUsers, expenses, groupId, groupName }: { users: User[], setUsers: React.Dispatch<React.SetStateAction<User[]>>, expenses: Expense[], groupId: string, groupName?: string }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
+  const [copiedLink, setCopiedLink] = useState(false);
+  const [copiedCode, setCopiedCode] = useState(false);
   const { user } = useAuth();
+
+  const handleCopyLink = async () => {
+    const url = new URL(window.location.href);
+    url.searchParams.set('groupId', groupId);
+    const inviteUrl = url.toString();
+    
+    const shareTitle = groupName ? `Join the ${groupName} group` : 'Join my SplitMate Group';
+    const shareText = groupName 
+      ? `Hey! I've set up a group for our place on SplitMate to track expenses. You can join the "${groupName}" group here: ${inviteUrl}`
+      : `Hey! Join my expense-sharing group on SplitMate! Click here to share costs with me: ${inviteUrl}`;
+
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: shareTitle,
+          text: shareText,
+          url: inviteUrl,
+        });
+        setCopiedLink(true);
+        setTimeout(() => setCopiedLink(false), 2000);
+      } catch (err) {
+        if (err instanceof Error && err.name !== 'AbortError') {
+          console.error('Error sharing:', err);
+        }
+      }
+    } else {
+      try {
+        await navigator.clipboard.writeText(shareText);
+        setCopiedLink(true);
+        setTimeout(() => setCopiedLink(false), 2000);
+      } catch (err) {
+        console.error('Failed to copy message:', err);
+      }
+    }
+  };
+
+  const handleCopyCode = () => {
+    navigator.clipboard.writeText(groupId);
+    setCopiedCode(true);
+    setTimeout(() => setCopiedCode(false), 2000);
+  };
 
   const handleAdd = async () => {
     const colors = ['#4f46e5', '#0ea5e9', '#10b981', '#f59e0b', '#8b5cf6'];
@@ -29,7 +69,7 @@ export default function PeopleTab({ users, setUsers, expenses }: { users: User[]
 
     if (user) {
       try {
-        await setDoc(doc(db, `groups/${GROUP_ID}/users`, newUser.id), newUser);
+        await setDoc(doc(db, `groups/${groupId}/users`, newUser.id), newUser);
       } catch (error) {
         console.error("Failed to add user to FB", error);
       }
@@ -45,7 +85,7 @@ export default function PeopleTab({ users, setUsers, expenses }: { users: User[]
     
     if (user) {
       try {
-        await deleteDoc(doc(db, `groups/${GROUP_ID}/users`, id));
+        await deleteDoc(doc(db, `groups/${groupId}/users`, id));
       } catch (error) {
         console.error("Failed to delete user from FB", error);
       }
@@ -59,7 +99,7 @@ export default function PeopleTab({ users, setUsers, expenses }: { users: User[]
        
        if (user) {
          try {
-           await updateDoc(doc(db, `groups/${GROUP_ID}/users`, id), {
+           await updateDoc(doc(db, `groups/${groupId}/users`, id), {
              name: newName
            });
          } catch (error) {
@@ -123,8 +163,50 @@ export default function PeopleTab({ users, setUsers, expenses }: { users: User[]
           </div>
         ))}
       </div>
-      
-      <AdminAccessControl />
+
+      {/* Invite Section */}
+      <div className="mt-8 pt-8 border-t border-slate-200">
+        <h3 className="text-lg font-bold text-slate-800 mb-4">Invite Roommates</h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-5 space-y-3">
+            <div className="flex items-center gap-2 text-emerald-700 font-bold">
+              <Link size={18} />
+              <span>Invite Link</span>
+            </div>
+            <p className="text-sm text-emerald-600/80">The easiest way! Send this link to your roommates and they'll join automatically.</p>
+            <button 
+              onClick={handleCopyLink}
+              className="w-full flex items-center justify-center gap-2 bg-white border border-emerald-200 text-emerald-700 py-2.5 rounded-lg font-bold hover:bg-emerald-100 transition-colors shadow-sm"
+            >
+              {copiedLink ? <Check size={18} className="text-emerald-500" /> : <Link size={18} />}
+              {copiedLink ? 'Link Copied!' : 'Share Invite Link'}
+            </button>
+          </div>
+
+          <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-5 space-y-3">
+            <div className="flex items-center gap-2 text-indigo-700 font-bold">
+              <Check size={18} />
+              <span>Invite Code</span>
+            </div>
+            <p className="text-sm text-indigo-600/80">Already have the app open? Just tell them to enter this code in the "Groups" tab.</p>
+            <div className="flex gap-2">
+              <div className={`flex-1 bg-white border border-indigo-200 flex items-center justify-center font-mono font-bold text-indigo-700 rounded-lg py-2 px-2 whitespace-nowrap overflow-hidden ${
+                groupId.length > 18 ? 'text-sm' : groupId.length > 12 ? 'text-base' : 'text-xl'
+              }`}>
+                {groupId}
+              </div>
+              <button 
+                onClick={handleCopyCode}
+                className="bg-indigo-600 text-white p-2.5 px-4 rounded-lg hover:bg-indigo-700 transition-colors shadow-sm flex items-center gap-2"
+                title="Copy Code"
+              >
+                {copiedCode ? <Check size={20} /> : <Copy size={20} />}
+                <span className="hidden sm:inline">Copy</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

@@ -1,65 +1,74 @@
 import React, { useState, useEffect } from 'react';
-import { Expense, User, Category } from './types';
+import { Expense, User, Category, Group } from './types';
 import Dashboard from './components/Dashboard';
 import ExpensesList from './components/ExpensesList';
 import Header from './components/Header';
 import PeopleTab from './components/PeopleTab';
 import CategoriesTab from './components/CategoriesTab';
-import { Wallet, List, Users, Tags } from 'lucide-react';
+import GroupSelector from './components/GroupSelector';
+import { Wallet, List, Users, Tags, LayoutGrid } from 'lucide-react';
 import { useAuth } from './contexts/AuthContext';
 import { collection, onSnapshot, query, setDoc, doc, deleteDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from './firebase';
 
-const GROUP_ID = "default-group"; // we just use a default group for now
-
 export default function App() {
   const { user } = useAuth();
+  const [groupId, setGroupId] = useState<string | null>(null);
+  const [currentGroup, setCurrentGroup] = useState<Group | null>(null);
   const [users, setUsers] = useState<User[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
-  const [activeTab, setActiveTab] = useState<'summary' | 'expenses' | 'people' | 'categories'>('summary');
-  
+  const [activeTab, setActiveTab] = useState<'summary' | 'expenses' | 'people' | 'categories' | 'groups'>('summary');
+
+  const [inviteId, setInviteId] = useState<string | null>(null);
+
   useEffect(() => {
-    if (!user) return;
+    // Check if there's a stored groupId we want to default to, or a query parameter
+    const urlParams = new URLSearchParams(window.location.search);
+    const invite = urlParams.get('groupId');
+    const stored = localStorage.getItem('activeGroupId');
     
-    const initGroup = async () => {
-      try {
-        const groupRef = doc(db, `groups/${GROUP_ID}`);
-        const userRef = doc(db, `groups/${GROUP_ID}/users`, user.uid);
-        
-        // Update user's profile in the group
-        await setDoc(userRef, {
-          id: user.uid,
-          name: user.displayName || 'Anonymous',
-          color: '#4f46e5',
-          avatarUrl: user.photoURL || ''
-        }, { merge: true });
+    if (invite) {
+      setInviteId(invite);
+    } else if (stored) {
+      setGroupId(stored);
+    }
+  }, []);
 
-        // We use a firestore merge block here because of our rules requiring "createdAt" strictly on create.
-        await setDoc(groupRef, {
-          name: 'Home Split',
-          members: [user.uid],
-          createdAt: serverTimestamp()
-        }, { merge: true }); // Warning: The merge won't bypass the rule if the document does not exist, so it's a bit tricky.
-      } catch (e) {
-        console.error("Failed to init group", e);
+  const handleSelectGroup = (id: string) => {
+    setGroupId(id);
+    localStorage.setItem('activeGroupId', id);
+    setActiveTab('summary');
+    // Remove the URL param if it exists so it doesn't stick around
+    const url = new URL(window.location.href);
+    if (url.searchParams.has('groupId')) {
+      url.searchParams.delete('groupId');
+      window.history.replaceState({}, '', url);
+    }
+  };
+
+  useEffect(() => {
+    if (!user || !groupId) return;
+
+    const unsubscribeGroup = onSnapshot(doc(db, `groups/${groupId}`), (snapshot) => {
+      if (snapshot.exists()) {
+        setCurrentGroup({ id: snapshot.id, ...snapshot.data() } as Group);
       }
-    };
+    }, (error) => {
+      console.warn("Firestore sync error for group metadata", error);
+    });
     
-    initGroup();
-
-    const unsubscribeExpenses = onSnapshot(query(collection(db, `groups/${GROUP_ID}/expenses`)), (snapshot) => {
+    const unsubscribeExpenses = onSnapshot(query(collection(db, `groups/${groupId}/expenses`)), (snapshot) => {
       const fbExpenses: Expense[] = [];
       snapshot.forEach((doc) => {
         fbExpenses.push(doc.data() as Expense);
       });
       setExpenses(fbExpenses.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
     }, (error) => {
-      // It will throw permission denied early on because the group is not created, catching silently for mock data
       console.warn("Firestore sync error for expenses, using local state", error);
     });
 
-    const unsubscribeUsers = onSnapshot(query(collection(db, `groups/${GROUP_ID}/users`)), (snapshot) => {
+    const unsubscribeUsers = onSnapshot(query(collection(db, `groups/${groupId}/users`)), (snapshot) => {
       const fbUsers: User[] = [];
       snapshot.forEach((doc) => {
         fbUsers.push(doc.data() as User);
@@ -69,7 +78,7 @@ export default function App() {
       console.warn("Firestore sync error for users, using local state", error);
     });
 
-    const unsubscribeCategories = onSnapshot(query(collection(db, `groups/${GROUP_ID}/categories`)), (snapshot) => {
+    const unsubscribeCategories = onSnapshot(query(collection(db, `groups/${groupId}/categories`)), (snapshot) => {
       const fbCategories: Category[] = [];
       snapshot.forEach((doc) => {
         fbCategories.push(doc.data() as Category);
@@ -80,23 +89,23 @@ export default function App() {
     });
 
     return () => {
+      unsubscribeGroup();
       unsubscribeExpenses();
       unsubscribeUsers();
       unsubscribeCategories();
     };
-  }, [user]);
+  }, [user, groupId]);
 
   const handleAddExpense = async (expense: Expense) => {
     setExpenses([expense, ...expenses].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
     
-    if (user) {
+    if (user && groupId) {
       try {
-        await setDoc(doc(db, `groups/${GROUP_ID}/expenses`, expense.id), {
+        await setDoc(doc(db, `groups/${groupId}/expenses`, expense.id), {
           ...expense,
           createdAt: serverTimestamp()
         });
       } catch (error) {
-        // Just log, local state updated
         console.error("Failed to sync new expense to FB", error);
       }
     }
@@ -105,9 +114,9 @@ export default function App() {
   const handleDeleteExpense = async (id: string) => {
     setExpenses(expenses.filter(e => e.id !== id));
     
-    if (user) {
+    if (user && groupId) {
       try {
-         await deleteDoc(doc(db, `groups/${GROUP_ID}/expenses`, id));
+         await deleteDoc(doc(db, `groups/${groupId}/expenses`, id));
       } catch (error) {
          console.error("Failed to delete expense from FB", error);
       }
@@ -121,9 +130,9 @@ export default function App() {
     const newState = !expense.isSettled;
     setExpenses(expenses.map(e => e.id === id ? { ...e, isSettled: newState } : e));
     
-    if (user) {
+    if (user && groupId) {
       try {
-        await updateDoc(doc(db, `groups/${GROUP_ID}/expenses`, id), {
+        await updateDoc(doc(db, `groups/${groupId}/expenses`, id), {
           isSettled: newState
         });
       } catch(error) {
@@ -136,30 +145,48 @@ export default function App() {
     <div className="min-h-screen flex flex-col bg-slate-50">
       <Header />
       
-      <main className="flex-1 w-full max-w-5xl mx-auto p-4 sm:p-6 pb-24 sm:pb-6">
-        {activeTab === 'summary' && <Dashboard expenses={expenses} users={users} categories={categories} />}
-        {activeTab === 'expenses' && <ExpensesList expenses={expenses} users={users} categories={categories} onAdd={handleAddExpense} onDelete={handleDeleteExpense} onToggleSettled={handleToggleSettled} />}
-        {activeTab === 'people' && <PeopleTab users={users} setUsers={setUsers} expenses={expenses} />}
-        {activeTab === 'categories' && <CategoriesTab categories={categories} setCategories={setCategories} expenses={expenses} />}
-      </main>
+      {!user ? (
+        <main className="flex-1 w-full max-w-5xl mx-auto p-4 sm:p-6 pb-24 flex items-center justify-center text-center">
+          <div className="max-w-md space-y-4">
+            <h2 className="text-2xl font-bold text-slate-800">Welcome to SplitMate</h2>
+            <p className="text-slate-500">Sign in to start managing shared expenses with your housemates easily.</p>
+          </div>
+        </main>
+      ) : !groupId ? (
+        <main className="flex-1 w-full max-w-5xl mx-auto p-4 sm:p-6 pb-24">
+          <GroupSelector onSelectGroup={handleSelectGroup} initialInviteId={inviteId} />
+        </main>
+      ) : (
+        <>
+          <main className="flex-1 w-full max-w-5xl mx-auto p-4 sm:p-6 pb-24 sm:pb-6">
+            {activeTab === 'summary' && <Dashboard expenses={expenses} users={users} categories={categories} />}
+            {activeTab === 'expenses' && <ExpensesList expenses={expenses} users={users} categories={categories} onAdd={handleAddExpense} onDelete={handleDeleteExpense} onToggleSettled={handleToggleSettled} />}
+            {activeTab === 'people' && <PeopleTab users={users} setUsers={setUsers} expenses={expenses} groupId={groupId} groupName={currentGroup?.name} />}
+            {activeTab === 'categories' && <CategoriesTab categories={categories} setCategories={setCategories} expenses={expenses} groupId={groupId} />}
+            {activeTab === 'groups' && <GroupSelector onSelectGroup={handleSelectGroup} initialInviteId={inviteId} />}
+          </main>
 
-      {/* Mobile Bottom Nav */}
-      <nav className="sm:hidden fixed bottom-0 w-full bg-white/90 backdrop-blur-md border-t border-slate-200 flex justify-around p-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] z-50 shadow-[0_-8px_16px_-1px_rgba(0,0,0,0.05)]">
-        <NavItem icon={<Wallet />} label="Summary" active={activeTab === 'summary'} onClick={() => setActiveTab('summary')} />
-        <NavItem icon={<List />} label="Expenses" active={activeTab === 'expenses'} onClick={() => setActiveTab('expenses')} />
-        <NavItem icon={<Users />} label="People" active={activeTab === 'people'} onClick={() => setActiveTab('people')} />
-        <NavItem icon={<Tags />} label="Categories" active={activeTab === 'categories'} onClick={() => setActiveTab('categories')} />
-      </nav>
+          {/* Mobile Bottom Nav */}
+          <nav className="sm:hidden fixed bottom-0 w-full bg-white/90 backdrop-blur-md border-t border-slate-200 flex justify-around p-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] z-50 shadow-[0_-8px_16px_-1px_rgba(0,0,0,0.05)]">
+            <NavItem icon={<Wallet />} label="Summary" active={activeTab === 'summary'} onClick={() => setActiveTab('summary')} />
+            <NavItem icon={<List />} label="Expenses" active={activeTab === 'expenses'} onClick={() => setActiveTab('expenses')} />
+            <NavItem icon={<Users />} label="People" active={activeTab === 'people'} onClick={() => setActiveTab('people')} />
+            <NavItem icon={<Tags />} label="Categories" active={activeTab === 'categories'} onClick={() => setActiveTab('categories')} />
+            <NavItem icon={<LayoutGrid />} label="Groups" active={activeTab === 'groups'} onClick={() => setActiveTab('groups')} />
+          </nav>
 
-      {/* Desktop Top Tabs */}
-      <div className="hidden sm:flex justify-center -mt-8 mb-6 z-10 relative">
-        <div className="bg-white rounded-lg p-1 shadow-sm border border-slate-200 inline-flex">
-          <TabButton icon={<Wallet size={18} />} label="Summary" active={activeTab === 'summary'} onClick={() => setActiveTab('summary')} />
-          <TabButton icon={<List size={18} />} label="Expenses" active={activeTab === 'expenses'} onClick={() => setActiveTab('expenses')} />
-          <TabButton icon={<Users size={18} />} label="People" active={activeTab === 'people'} onClick={() => setActiveTab('people')} />
-          <TabButton icon={<Tags size={18} />} label="Categories" active={activeTab === 'categories'} onClick={() => setActiveTab('categories')} />
-        </div>
-      </div>
+          {/* Desktop Top Tabs */}
+          <div className="hidden sm:flex justify-center -mt-8 mb-6 z-10 relative">
+            <div className="bg-white rounded-lg p-1 shadow-sm border border-slate-200 inline-flex">
+              <TabButton icon={<Wallet size={18} />} label="Summary" active={activeTab === 'summary'} onClick={() => setActiveTab('summary')} />
+              <TabButton icon={<List size={18} />} label="Expenses" active={activeTab === 'expenses'} onClick={() => setActiveTab('expenses')} />
+              <TabButton icon={<Users size={18} />} label="People" active={activeTab === 'people'} onClick={() => setActiveTab('people')} />
+              <TabButton icon={<Tags size={18} />} label="Categories" active={activeTab === 'categories'} onClick={() => setActiveTab('categories')} />
+              <TabButton icon={<LayoutGrid size={18} />} label="Groups" active={activeTab === 'groups'} onClick={() => setActiveTab('groups')} />
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }

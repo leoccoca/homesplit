@@ -7,9 +7,7 @@ import { doc, setDoc, deleteDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 
-const GROUP_ID = "default-group";
-
-export default function CategoriesTab({ categories, setCategories, expenses }: { categories: Category[], setCategories: React.Dispatch<React.SetStateAction<Category[]>>, expenses: Expense[] }) {
+export default function CategoriesTab({ categories, setCategories, expenses, groupId }: { categories: Category[], setCategories: React.Dispatch<React.SetStateAction<Category[]>>, expenses: Expense[], groupId: string }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
   const { user } = useAuth();
@@ -36,7 +34,7 @@ export default function CategoriesTab({ categories, setCategories, expenses }: {
 
     if (user) {
       try {
-        await setDoc(doc(db, `groups/${GROUP_ID}/categories`, newCategory.id), newCategory);
+        await setDoc(doc(db, `groups/${groupId}/categories`, newCategory.id), newCategory);
       } catch (error) {
         console.error("Failed to add category to FB", error);
       }
@@ -52,7 +50,7 @@ export default function CategoriesTab({ categories, setCategories, expenses }: {
 
     if (user) {
       try {
-        await deleteDoc(doc(db, `groups/${GROUP_ID}/categories`, id));
+        await deleteDoc(doc(db, `groups/${groupId}/categories`, id));
       } catch (error) {
         console.error("Failed to remove category from FB", error);
       }
@@ -66,7 +64,7 @@ export default function CategoriesTab({ categories, setCategories, expenses }: {
 
        if (user) {
          try {
-           await updateDoc(doc(db, `groups/${GROUP_ID}/categories`, id), {
+           await updateDoc(doc(db, `groups/${groupId}/categories`, id), {
              name: newNameValue
            });
          } catch (error) {

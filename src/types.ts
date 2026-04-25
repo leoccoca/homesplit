@@ -24,6 +24,14 @@ export type Expense = {
   involvedUserIds?: string[]; // If undefined, assume all users
 };
 
+export type Group = {
+  id: string;
+  name: string;
+  members: string[];
+  ownerId: string;
+  createdAt: any;
+};
+
 export type Settlement = {
   fromUser: User;
   toUser: User;

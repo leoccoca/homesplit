@@ -27,22 +27,23 @@ service cloud.firestore {
     }
 
     function isValidGroup(data) {
-      return data.keys().hasAll(['name', 'members', 'createdAt']) &&
-             data.keys().size() == 3 &&
+      return data.keys().hasAll(['name', 'members', 'ownerId', 'createdAt']) &&
+             data.keys().size() == 4 &&
              data.name is string && data.name.size() > 0 && data.name.size() <= 100 &&
              data.members is list && data.members.size() > 0 && data.members.size() <= 100 &&
              data.members[0] is string && 
+             data.ownerId is string && data.ownerId == request.auth.uid &&
              data.createdAt == request.time;
     }
 
     function isValidGroupUpdate(data) {
       return data.name is string && data.name.size() > 0 && data.name.size() <= 100 &&
              data.members is list && data.members.size() > 0 && data.members.size() <= 100 &&
+             data.ownerId == existing().ownerId &&
              data.createdAt == existing().createdAt;
     }
 
     function isValidUser(data) {
-      // Allow overriding existing with affectedKeys later, so let's check basic structure
       return data.keys().hasAll(['id', 'name', 'color']) &&
              data.id is string && data.id.size() <= 128 &&
              data.name is string && data.name.size() > 0 && data.name.size() <= 100 &&
@@ -96,42 +97,43 @@ service cloud.firestore {
              data.icon is string && data.icon.size() <= 50;
     }
 
-    function isAllowed() {
-      return isSignedIn() && (
-        request.auth.token.email == "leocco.ca@gmail.com" ||
-        exists(/databases/$(database)/documents/allowed_emails/$(request.auth.token.email))
-      );
-    }
-
-    match /allowed_emails/{email} {
-      // Only the primary admin can manage the allowed list
-      allow read, write: if isSignedIn() && request.auth.token.email == "leocco.ca@gmail.com";
-    }
-
     match /groups/{groupId} {
-      allow create: if isSignedIn() && isValidId(groupId) && isValidGroup(incoming()) && request.auth.uid in incoming().members && isAllowed();
-      allow read: if isSignedIn() && (request.auth.uid in existing().members || (groupId == 'default-group' && isAllowed()));
-      allow update: if isSignedIn() && (request.auth.uid in existing().members || (groupId == 'default-group' && isAllowed()));
+      allow create: if isSignedIn() && isValidId(groupId) && isValidGroup(incoming()) && request.auth.uid in incoming().members;
+      allow read: if isSignedIn() && request.auth.uid in existing().members;
+      allow delete: if isSignedIn() && (
+        existing().get('ownerId', '') == request.auth.uid ||
+        (!existing().keys().hasAll(['ownerId']) && request.auth.uid in existing().members)
+      );
+      
+      // Allow update if member, OR if joining by appending own UID to members array
+      allow update: if isSignedIn() && (
+        (request.auth.uid in existing().members && isValidGroupUpdate(incoming())) ||
+        (
+          !(request.auth.uid in existing().members) &&
+          request.auth.uid in incoming().members &&
+          incoming().diff(existing()).affectedKeys().hasOnly(['members'])
+        )
+      );
       
       match /users/{userId} {
-        allow read: if isGroupMember(groupId) || (groupId == 'default-group' && isAllowed());
-        allow create: if isSignedIn() && isValidId(userId) && isValidUser(incoming()) && (userId == request.auth.uid || (groupId == 'default-group' && isAllowed()));
-        allow update: if isSignedIn() && isValidId(userId) && (userId == request.auth.uid || (groupId == 'default-group' && isAllowed())) && isValidUserUpdate(incoming());
-        allow delete: if isSignedIn() && isValidId(userId) && (userId == request.auth.uid || (groupId == 'default-group' && isAllowed()));
+        allow read: if isGroupMember(groupId);
+        allow create: if isSignedIn() && isValidId(userId) && isValidUser(incoming()) && (userId == request.auth.uid || isGroupMember(groupId));
+        allow update: if isSignedIn() && isValidId(userId) && (userId == request.auth.uid || isGroupMember(groupId)) && isValidUserUpdate(incoming());
+        allow delete: if isSignedIn() && isValidId(userId) && (userId == request.auth.uid || isGroupMember(groupId));
       }
       
       match /categories/{categoryId} {
-        allow read: if isGroupMember(groupId) || (groupId == 'default-group' && isAllowed());
-        allow create: if isSignedIn() && isValidId(categoryId) && isValidCategory(incoming()) && (isGroupMember(groupId) || (groupId == 'default-group' && isAllowed()));
-        allow update: if isSignedIn() && isValidId(categoryId) && (isGroupMember(groupId) || (groupId == 'default-group' && isAllowed())) && isValidCategoryUpdate(incoming());
-        allow delete: if isSignedIn() && isValidId(categoryId) && (isGroupMember(groupId) || (groupId == 'default-group' && isAllowed()));
+        allow read: if isGroupMember(groupId);
+        allow create: if isSignedIn() && isValidId(categoryId) && isValidCategory(incoming()) && isGroupMember(groupId);
+        allow update: if isSignedIn() && isValidId(categoryId) && isGroupMember(groupId) && isValidCategoryUpdate(incoming());
+        allow delete: if isSignedIn() && isValidId(categoryId) && isGroupMember(groupId);
       }
       
       match /expenses/{expenseId} {
-        allow read: if isGroupMember(groupId) || (groupId == 'default-group' && isAllowed());
-        allow create: if (isGroupMember(groupId) || (groupId == 'default-group' && isAllowed())) && isValidId(expenseId) && isValidExpense(incoming()) && (request.auth.uid in incoming().involvedUserIds || request.auth.uid == incoming().paidById || isAllowed());
-        allow update: if (isGroupMember(groupId) || (groupId == 'default-group' && isAllowed())) && isValidId(expenseId) && isValidExpenseUpdate(incoming());
-        allow delete: if (isGroupMember(groupId) || (groupId == 'default-group' && isAllowed())) && isValidId(expenseId) && (existing().paidById == request.auth.uid || request.auth.uid in existing().involvedUserIds || isAllowed());
+        allow read: if isGroupMember(groupId);
+        allow create: if isGroupMember(groupId) && isValidId(expenseId) && isValidExpense(incoming()) && (request.auth.uid in incoming().involvedUserIds || request.auth.uid == incoming().paidById);
+        allow update: if isGroupMember(groupId) && isValidId(expenseId) && isValidExpenseUpdate(incoming());
+        allow delete: if isGroupMember(groupId) && isValidId(expenseId) && (existing().paidById == request.auth.uid || request.auth.uid in existing().involvedUserIds);
       }
     }
   }
