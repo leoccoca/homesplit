@@ -97,6 +97,15 @@ service cloud.firestore {
              data.icon is string && data.icon.size() <= 50;
     }
 
+    function isValidFeedback(data) {
+      return data.keys().hasAll(['message', 'createdAt']) &&
+             data.message is string && data.message.size() > 0 && data.message.size() <= 2000 &&
+             data.createdAt == request.time &&
+             (data.get('email', '') is string && data.get('email', '').size() <= 200) &&
+             (data.get('name', '') is string && data.get('name', '').size() <= 100) &&
+             (data.get('userId', null) == null || data.userId == request.auth.uid);
+    }
+
     match /groups/{groupId} {
       allow create: if isSignedIn() && isValidId(groupId) && isValidGroup(incoming()) && request.auth.uid in incoming().members;
       allow read: if isSignedIn() && request.auth.uid in existing().members;
@@ -135,6 +144,11 @@ service cloud.firestore {
         allow update: if isGroupMember(groupId) && isValidId(expenseId) && isValidExpenseUpdate(incoming());
         allow delete: if isGroupMember(groupId) && isValidId(expenseId) && (existing().paidById == request.auth.uid || request.auth.uid in existing().involvedUserIds);
       }
+    }
+
+    match /feedback/{feedbackId} {
+      allow create: if isValidId(feedbackId) && isValidFeedback(incoming());
+      allow read: if false; // Only accessible via Firebase Console for now
     }
   }
 }

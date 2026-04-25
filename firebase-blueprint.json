@@ -52,9 +52,26 @@
         "createdAt": { "type": "string" }
       },
       "required": ["description", "amount", "paidById", "categoryId", "date", "splitMode", "involvedUserIds", "createdAt"]
+    },
+    "Feedback": {
+      "title": "Feedback",
+      "description": "Feedback from users",
+      "type": "object",
+      "properties": {
+        "message": { "type": "string" },
+        "email": { "type": "string" },
+        "name": { "type": "string" },
+        "userId": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["message", "createdAt"]
     }
   },
   "firestore": {
+    "/feedback/{feedbackId}": {
+      "schema": { "$ref": "#/entities/Feedback" },
+      "description": "Submitted feedback"
+    },
     "/groups/{groupId}": {
       "schema": { "$ref": "#/entities/Group" },
       "description": "The shared group"
