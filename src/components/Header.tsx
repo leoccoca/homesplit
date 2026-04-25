@@ -6,7 +6,7 @@ export default function Header() {
   const { user, login, logout } = useAuth();
 
   return (
-    <header className="sticky top-0 z-40 bg-white/80 backdrop-blur-md border-b border-slate-200 px-6 py-3 sm:pt-4 sm:pb-12 transition-all">
+    <header className="sticky top-0 z-40 bg-white/80 backdrop-blur-md border-b border-slate-200 px-6 pt-3 pb-4 sm:pt-4 sm:pb-4 transition-all">
       <div className="max-w-5xl mx-auto flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="bg-indigo-600 p-2 rounded-lg text-white shadow-sm hidden sm:block">
@@ -14,7 +14,7 @@ export default function Header() {
           </div>
           <div>
             <h1 className="text-xl font-bold tracking-tight text-slate-800">SplitMate</h1>
-            <p className="text-xs text-slate-500 font-medium hidden sm:block">Roommate Expense Tracker</p>
+            <p className="text-xs text-slate-500 font-medium hidden sm:block">The Expense Tracker</p>
           </div>
         </div>
         
