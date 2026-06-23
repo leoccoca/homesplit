@@ -2,16 +2,43 @@ import React, { useState } from 'react';
 import { Expense, User, Category } from '../types';
 import { X } from 'lucide-react';
 import { IconMap } from './ExpensesList';
+import { useAuth } from '../contexts/AuthContext';
 
-export default function AddExpenseModal({ users, categories, onClose, onAdd }: { users: User[], categories: Category[], onClose: () => void, onAdd: (e: Expense) => void }) {
-  const [description, setDescription] = useState('');
-  const [amount, setAmount] = useState('');
-  const [date, setDate] = useState(new Date().toISOString().substring(0, 10)); // Default to today's date YYYY-MM-DD
-  const [paidById, setPaidById] = useState(users[0]?.id || '');
-  const [categoryId, setCategoryId] = useState(categories[0]?.id || '');
-  const [involvedUserIds, setInvolvedUserIds] = useState<string[]>(users.map(u => u.id));
+export default function AddExpenseModal({ 
+  users, 
+  categories, 
+  onClose, 
+  onAdd, 
+  onUpdate, 
+  expenseToEdit 
+}: { 
+  users: User[], 
+  categories: Category[], 
+  onClose: () => void, 
+  onAdd?: (e: Expense) => void, 
+  onUpdate?: (e: Expense) => void, 
+  expenseToEdit?: Expense 
+}) {
+  const { user } = useAuth();
+
+  const [description, setDescription] = useState(expenseToEdit?.description || '');
+  const [amount, setAmount] = useState(expenseToEdit?.amount ? expenseToEdit.amount.toString() : '');
+  const [date, setDate] = useState(expenseToEdit?.date ? expenseToEdit.date.substring(0, 10) : new Date().toISOString().substring(0, 10)); // Default to today's date YYYY-MM-DD
+  
+  const [paidById, setPaidById] = useState(() => {
+    if (expenseToEdit?.paidById) return expenseToEdit.paidById;
+    if (user && users.some(u => u.id === user.uid)) return user.uid;
+    return users[0]?.id || '';
+  });
+  
+  const [categoryId, setCategoryId] = useState(expenseToEdit?.categoryId || categories[0]?.id || '');
+  const [involvedUserIds, setInvolvedUserIds] = useState<string[]>(
+    expenseToEdit?.involvedUserIds || users.map(u => u.id)
+  );
+  const [error, setError] = useState<string | null>(null);
 
   const toggleInvolvedUser = (id: string) => {
+    setError(null);
     setInvolvedUserIds(prev => 
       prev.includes(id) ? prev.filter(u => u !== id) : [...prev, id]
     );
@@ -19,28 +46,38 @@ export default function AddExpenseModal({ users, categories, onClose, onAdd }: {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!description || !amount || parseFloat(amount) <= 0) return;
+    setError(null);
+
+    if (!description.trim() || !amount || parseFloat(amount) <= 0) {
+      setError("Please check description and specify a valid amount.");
+      return;
+    }
     if (involvedUserIds.length === 0) {
-      alert("At least one person must be involved in the expense.");
+      setError("At least one person must be involved in the expense.");
       return;
     }
 
-    // We can use the date string directly or convert it to a full ISO string.
-    // The current expense date format is full ISO string in `mockData.ts` and `Dashboard.ts`.
-    // Adding T00:00:00.000Z to keep it consistent if needed, but YYYY-MM-DD is valid ISO too.
-    const newExpense: Expense = {
-      id: Math.random().toString(36).substr(2, 9),
-      description,
+    const targetExpense: Expense = {
+      id: expenseToEdit?.id || Math.random().toString(36).substr(2, 9),
+      description: description.trim(),
       amount: parseFloat(amount),
       paidById,
       categoryId,
       date: new Date(date).toISOString(), // Generate full ISO string based on selected date
-      splitMode: 'equal',
-      involvedUserIds
+      splitMode: expenseToEdit?.splitMode || 'equal',
+      involvedUserIds,
+      isSettled: expenseToEdit?.isSettled || false,
+      createdAt: expenseToEdit?.createdAt || undefined
     };
 
-    onAdd(newExpense);
+    if (expenseToEdit && onUpdate) {
+      onUpdate(targetExpense);
+    } else if (onAdd) {
+      onAdd(targetExpense);
+    }
   };
+
+  const isEditMode = !!expenseToEdit;
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-300">
@@ -49,7 +86,7 @@ export default function AddExpenseModal({ users, categories, onClose, onAdd }: {
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between p-4 sm:p-6 border-b border-slate-100 flex-shrink-0">
-          <h2 className="text-xl font-bold text-slate-800">Add Expense</h2>
+          <h2 className="text-xl font-bold text-slate-800">{isEditMode ? 'Edit Expense' : 'Add Expense'}</h2>
           <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full transition-colors active:scale-95">
             <X size={20} />
           </button>
@@ -57,6 +94,12 @@ export default function AddExpenseModal({ users, categories, onClose, onAdd }: {
 
         <form onSubmit={handleSubmit} className="flex-1 flex flex-col min-h-0 overflow-hidden">
           <div className="p-4 sm:p-6 space-y-4 sm:space-y-5 overflow-y-auto flex-1">
+            {error && (
+              <div className="p-3 text-xs font-medium text-rose-600 bg-rose-50 border border-rose-100 rounded-lg animate-in fade-in slide-in-from-top-1">
+                {error}
+              </div>
+            )}
+
             <div>
               <label className="block text-sm font-semibold text-slate-700 mb-1.5">Description</label>
               <input 
@@ -151,7 +194,7 @@ export default function AddExpenseModal({ users, categories, onClose, onAdd }: {
               type="submit"
               className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3.5 px-4 rounded-xl shadow-sm hover:shadow-md active:scale-[0.98] transition-all"
             >
-              Save Expense
+              {isEditMode ? 'Save Changes' : 'Save Expense'}
             </button>
           </div>
         </form>

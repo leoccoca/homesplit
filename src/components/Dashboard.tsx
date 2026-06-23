@@ -1,12 +1,20 @@
 import React, { useMemo, useState } from 'react';
 import { Expense, User, Category } from '../types';
 import { calculateBalances, calculateSettlements } from '../lib/splitLogic';
-import { formatCurrency } from '../lib/utils';
-import { ArrowRight, ArrowUpRight, ArrowDownRight, TrendingUp, ChevronLeft, ChevronRight, CheckCircle2 } from 'lucide-react';
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
-import { format, parseISO } from 'date-fns';
+import { formatCurrency, parseLocalDate } from '../lib/utils';
+import { ArrowRight, ArrowUpRight, ArrowDownRight, ChevronLeft, ChevronRight, CheckCircle2 } from 'lucide-react';
+import { format } from 'date-fns';
+import SettleUpModal from './SettleUpModal';
+import { AnimatePresence } from 'motion/react';
 
-export default function Dashboard({ expenses, users, categories }: { expenses: Expense[], users: User[], categories: Category[] }) {
+export default function Dashboard({ expenses, users, categories, onAdd }: { expenses: Expense[], users: User[], categories: Category[], onAdd?: (e: Expense) => void }) {
+  const [activeSettle, setActiveSettle] = useState<{ fromUser: User; toUser: User; amount: number } | null>(null);
+  const [expandedSettlement, setExpandedSettlement] = useState<number | null>(null);
+
+  const handleSettleClick = (s: { fromUser: User; toUser: User; amount: number }) => {
+    setActiveSettle(s);
+  };
+
   // Extract available months
   const availableMonths = useMemo(() => {
     const months = new Set<string>();
@@ -52,15 +60,6 @@ export default function Dashboard({ expenses, users, categories }: { expenses: E
     return spending;
   }, [currentMonthExpenses, users]);
 
-  // Category breakdown in this month
-  const categoryData = useMemo(() => {
-    return categories.map(cat => ({
-      name: cat.name,
-      value: currentMonthExpenses.filter(e => e.categoryId === cat.id).reduce((sum, e) => sum + e.amount, 0),
-      color: cat.color
-    })).filter(d => d.value > 0).sort((a, b) => b.value - a.value);
-  }, [currentMonthExpenses, categories]);
-
   const onesOwed = useMemo(() => users.filter(u => (balances[u.id] || 0) > 0.01).sort((a, b) => balances[b.id] - balances[a.id]), [users, balances]);
   const onesOwing = useMemo(() => users.filter(u => (balances[u.id] || 0) < -0.01).sort((a, b) => balances[a.id] - balances[b.id]), [users, balances]);
 
@@ -75,7 +74,7 @@ export default function Dashboard({ expenses, users, categories }: { expenses: E
   const formattedMonth = useMemo(() => {
     if (!selectedMonth) return '';
     try {
-      return format(parseISO(`${selectedMonth}-01`), 'MMMM yyyy');
+      return format(parseLocalDate(`${selectedMonth}-01`), 'MMMM yyyy');
     } catch {
       return selectedMonth;
     }
@@ -193,80 +192,130 @@ export default function Dashboard({ expenses, users, categories }: { expenses: E
         </div>
 
         <div className="space-y-6">
-          {/* Category Breakdown */}
-          {currentMonthExpenses.length > 0 ? (
-            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-              <h2 className="text-sm font-semibold mb-6 flex items-center gap-2 text-slate-700">
-                <TrendingUp size={16} className="text-slate-400" />
-                Spending by Category
-              </h2>
-              <div className="h-48 mb-4">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={categoryData}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={40}
-                      outerRadius={80}
-                      paddingAngle={2}
-                      dataKey="value"
-                      stroke="transparent"
-                    >
-                      {categoryData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={entry.color} />
-                      ))}
-                    </Pie>
-                    <Tooltip 
-                      formatter={(value: number) => formatCurrency(value)}
-                      contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)', fontSize: '12px' }}
-                    />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-              
-              <div className="space-y-3">
-                {categoryData.map(cat => (
-                  <div key={cat.name} className="flex flex-col gap-1">
-                    <div className="flex justify-between items-center text-xs">
-                      <span className="flex items-center gap-2 font-medium text-slate-700">
-                        <span className="w-2 h-2 rounded-full shadow-inner" style={{ backgroundColor: cat.color }} />
-                        {cat.name}
-                      </span>
-                      <span className="font-semibold text-slate-800">{formatCurrency(cat.value)}</span>
-                    </div>
-                    <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                      <div className="h-full rounded-full" style={{ width: `${(cat.value / totalSpent) * 100}%`, backgroundColor: cat.color }} />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ) : (
-            <div className="bg-slate-100 p-6 rounded-2xl border border-slate-200 border-dashed text-center text-slate-500 py-12 flex flex-col items-center justify-center gap-3">
-               <TrendingUp size={32} className="text-slate-300" />
-               <p className="font-medium">No expenses in this month</p>
-            </div>
-          )}
-
           {/* Settlements */}
           {settlements.length > 0 && (
             <div className="bg-indigo-900 p-6 rounded-2xl text-white shadow-xl relative overflow-hidden">
               <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500 rounded-full -translate-y-1/2 translate-x-1/3 opacity-20 pointer-events-none" />
-              <h3 className="text-sm font-semibold mb-4 text-white">Settlement Suggestion (All time)</h3>
-              <div className="space-y-3 relative z-10">
-                {settlements.map((s, i) => (
-                  <div key={i} className="flex items-center justify-between py-2 border-b border-indigo-800/50 last:border-0 gap-2">
-                    <div className="flex items-center gap-3">
-                      <span className="text-indigo-200 text-sm">
-                        <span className="font-bold text-white">{s.fromUser.name}</span> pays <span className="font-bold text-white">{s.toUser.name}</span>
-                      </span>
+              <h3 className="text-sm font-semibold mb-4 text-white flex items-center justify-between">
+                <span>Settlement Suggestions</span>
+                <span className="text-xs font-normal text-indigo-300">Direct Repayments</span>
+              </h3>
+              <div className="space-y-4 relative z-10">
+                {settlements.map((s, i) => {
+                  const relevantExpenses = expenses.filter(e => {
+                    if (e.isSettled) return false;
+                    const involved = e.involvedUserIds || users.map(u => u.id);
+                    const isFromInvolved = involved.includes(s.fromUser.id);
+                    const isToInvolved = involved.includes(s.toUser.id);
+                    
+                    return (e.paidById === s.toUser.id && isFromInvolved) || 
+                           (e.paidById === s.fromUser.id && isToInvolved);
+                  });
+                  const isExpanded = expandedSettlement === i;
+
+                  return (
+                    <div key={i} className="border-b border-indigo-805/30 last:border-0 py-3">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <button
+                          onClick={() => setExpandedSettlement(isExpanded ? null : i)}
+                          className="flex items-center gap-2 text-left hover:opacity-90 active:scale-[0.99] transition-all flex-1 cursor-pointer group"
+                        >
+                          <div className="w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center font-bold text-white text-[10px] shadow-sm transition-transform group-hover:scale-105" style={{ backgroundColor: s.fromUser.color }}>
+                            {s.fromUser.name.charAt(0).toUpperCase()}
+                          </div>
+                          <ArrowRight size={14} className="text-indigo-300 flex-shrink-0" />
+                          <div className="w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center font-bold text-white text-[10px] shadow-sm transition-transform group-hover:scale-105" style={{ backgroundColor: s.toUser.color }}>
+                            {s.toUser.name.charAt(0).toUpperCase()}
+                          </div>
+                          <div className="flex flex-col">
+                            <span className="text-indigo-100 text-sm font-medium leading-tight">
+                              <span className="font-bold text-white">{s.fromUser.name}</span> pays <span className="font-bold text-white">{s.toUser.name}</span>
+                            </span>
+                            <span className="text-[10px] text-indigo-300 font-bold flex items-center gap-1 mt-0.5">
+                              {relevantExpenses.length > 0 ? (
+                                <>View {relevantExpenses.length} related calculation{relevantExpenses.length > 1 ? 's' : ''}</>
+                              ) : (
+                                <>Indirect balancing suggestion</>
+                              )}
+                              <span className="inline-block transition-transform duration-200" style={{ transform: isExpanded ? 'rotate(180deg)' : 'rotate(0)' }}>▼</span>
+                            </span>
+                          </div>
+                        </button>
+                        
+                        <div className="flex items-center justify-between sm:justify-end gap-3 w-full sm:w-auto">
+                          <div className="font-bold text-white text-base">
+                            {formatCurrency(s.amount)}
+                          </div>
+                          {onAdd && (
+                            <button 
+                              onClick={() => handleSettleClick(s)}
+                              className="px-3 py-1.5 bg-indigo-700 hover:bg-emerald-600 text-white rounded-lg text-xs font-bold transition-all active:scale-95 shadow-sm flex items-center gap-1 shrink-0 cursor-pointer"
+                            >
+                              Settle Up
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Expanded Section showing relevant records */}
+                      {isExpanded && (
+                        <div className="mt-3 bg-indigo-950/60 rounded-xl p-3 border border-indigo-800/40 text-xs text-indigo-200 space-y-2 animate-in fade-in slide-in-from-top-2 duration-200">
+                          <p className="font-bold text-indigo-300 border-b border-indigo-900/50 pb-1.5 mb-1.5 flex items-center justify-between">
+                            <span>How the calculation works:</span>
+                            <span className="text-[10px] bg-indigo-900/60 px-1.5 py-0.5 rounded text-indigo-100">
+                              Simplifying peer checks
+                            </span>
+                          </p>
+                          {relevantExpenses.length === 0 ? (
+                            <p className="text-[11px] text-indigo-300 italic leading-relaxed">
+                              This suggestion optimizes multiple indirect debts. There are no direct unsettled expenses between {s.fromUser.name} and {s.toUser.name}, but this payment balances the group's net fair shares.
+                            </p>
+                          ) : (
+                            <div className="space-y-2 max-h-44 overflow-y-auto pr-1">
+                              {relevantExpenses.map((re, reIdx) => {
+                                const involved = re.involvedUserIds || users.map(u => u.id);
+                                const splitAmount = re.amount / involved.length;
+                                const isCreditorExpense = re.paidById === s.toUser.id;
+                                
+                                return (
+                                  <div key={reIdx} className="bg-indigo-900/20 p-2 rounded-lg border border-indigo-800/20 flex items-start justify-between gap-2">
+                                    <div className="min-w-0 flex-1">
+                                      <p className="font-bold text-white truncate">{re.description}</p>
+                                      <p className="text-[10px] text-indigo-300 mt-0.5">
+                                        Total: <span className="text-white font-semibold">{formatCurrency(re.amount)}</span> • Paid by <span className="text-white font-semibold">{users.find(u => u.id === re.paidById)?.name || 'Someone'}</span> split by {involved.length} group members
+                                      </p>
+                                    </div>
+                                    <div className="text-right flex-shrink-0">
+                                      {isCreditorExpense ? (
+                                        <>
+                                          <span className="text-rose-300 font-extrabold font-mono flex items-center gap-0.5 justify-end">
+                                            +{formatCurrency(splitAmount)}
+                                          </span>
+                                          <p className="text-[9px] text-indigo-400 font-medium">Owed to {s.toUser.name}</p>
+                                        </>
+                                      ) : (
+                                        <>
+                                          <span className="text-emerald-400 font-extrabold font-mono flex items-center gap-0.5 justify-end">
+                                            -{formatCurrency(splitAmount)}
+                                          </span>
+                                          <p className="text-[9px] text-emerald-400/80 font-medium">Reduces debt</p>
+                                        </>
+                                      )}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                          <div className="text-[10px] text-indigo-400/90 pt-1 flex justify-between leading-tight">
+                            <span>Net Balance: <b>{formatCurrency(Math.abs(balances[s.fromUser.id]))}</b> total debt</span>
+                            <span>Direct suggestions prioritized</span>
+                          </div>
+                        </div>
+                      )}
                     </div>
-                    <div className="font-bold text-white shrink-0">
-                      {formatCurrency(s.amount)}
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}
@@ -282,6 +331,19 @@ export default function Dashboard({ expenses, users, categories }: { expenses: E
           )}
         </div>
       </div>
+
+      <AnimatePresence>
+        {activeSettle && onAdd && (
+          <SettleUpModal
+            users={users}
+            defaultFromUser={activeSettle.fromUser}
+            defaultToUser={activeSettle.toUser}
+            suggestedAmount={activeSettle.amount}
+            onClose={() => setActiveSettle(null)}
+            onAdd={onAdd}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }

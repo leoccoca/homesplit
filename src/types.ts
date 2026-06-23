@@ -22,6 +22,8 @@ export type Expense = {
   splitMode: 'equal' | 'exact' | 'percentage';
   isSettled?: boolean;
   involvedUserIds?: string[]; // If undefined, assume all users
+  createdAt?: any;
+  isRepayment?: boolean;
 };
 
 export type Group = {

@@ -6,8 +6,9 @@ import Header from './components/Header';
 import PeopleTab from './components/PeopleTab';
 import CategoriesTab from './components/CategoriesTab';
 import GroupSelector from './components/GroupSelector';
-import { Wallet, List, Users, Tags, LayoutGrid } from 'lucide-react';
+import { Wallet, List, Users, Tags, LayoutGrid, BarChart3 } from 'lucide-react';
 import { useAuth } from './contexts/AuthContext';
+import AnalysisTab from './components/AnalysisTab';
 import { collection, onSnapshot, query, setDoc, doc, deleteDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from './firebase';
 
@@ -18,7 +19,7 @@ export default function App() {
   const [users, setUsers] = useState<User[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
-  const [activeTab, setActiveTab] = useState<'summary' | 'expenses' | 'people' | 'categories' | 'groups'>('summary');
+  const [activeTab, setActiveTab] = useState<'summary' | 'expenses' | 'analysis' | 'people' | 'categories' | 'groups'>('summary');
 
   const [inviteId, setInviteId] = useState<string | null>(null);
 
@@ -141,9 +142,25 @@ export default function App() {
     }
   };
 
+  const handleUpdateExpense = async (expense: Expense) => {
+    setExpenses(prev => prev.map(e => e.id === expense.id ? expense : e).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
+    
+    if (user && groupId) {
+      try {
+        const payload: any = { ...expense };
+        if (!payload.createdAt) {
+          payload.createdAt = serverTimestamp();
+        }
+        await setDoc(doc(db, `groups/${groupId}/expenses`, expense.id), payload);
+      } catch (error) {
+        console.error("Failed to sync updated expense to FB", error);
+      }
+    }
+  };
+
   return (
     <div className="min-h-screen flex flex-col bg-slate-50">
-      <Header />
+      <Header activeTab={activeTab} setActiveTab={setActiveTab} showNavigation={!!user && !!groupId} groupId={groupId} onSelectGroup={handleSelectGroup} />
       
       {!user ? (
         <main className="flex-1 w-full max-w-5xl mx-auto p-4 sm:p-6 pb-24 flex items-center justify-center text-center">
@@ -159,32 +176,22 @@ export default function App() {
       ) : (
         <>
           <main className="flex-1 w-full max-w-5xl mx-auto p-4 sm:p-6 pb-24 sm:pb-6">
-            {activeTab === 'summary' && <Dashboard expenses={expenses} users={users} categories={categories} />}
-            {activeTab === 'expenses' && <ExpensesList expenses={expenses} users={users} categories={categories} onAdd={handleAddExpense} onDelete={handleDeleteExpense} onToggleSettled={handleToggleSettled} />}
+            {activeTab === 'summary' && <Dashboard expenses={expenses} users={users} categories={categories} onAdd={handleAddExpense} />}
+            {activeTab === 'expenses' && <ExpensesList expenses={expenses} users={users} categories={categories} onAdd={handleAddExpense} onDelete={handleDeleteExpense} onToggleSettled={handleToggleSettled} onUpdate={handleUpdateExpense} />}
+            {activeTab === 'analysis' && <AnalysisTab expenses={expenses} users={users} categories={categories} />}
             {activeTab === 'people' && <PeopleTab users={users} setUsers={setUsers} expenses={expenses} groupId={groupId} groupName={currentGroup?.name} />}
             {activeTab === 'categories' && <CategoriesTab categories={categories} setCategories={setCategories} expenses={expenses} groupId={groupId} />}
             {activeTab === 'groups' && <GroupSelector onSelectGroup={handleSelectGroup} initialInviteId={inviteId} />}
           </main>
 
           {/* Mobile Bottom Nav */}
-          <nav className="sm:hidden fixed bottom-0 w-full bg-white/90 backdrop-blur-md border-t border-slate-200 flex justify-around p-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] z-50 shadow-[0_-8px_16px_-1px_rgba(0,0,0,0.05)]">
+          <nav className="sm:hidden fixed bottom-0 w-full bg-white/95 backdrop-blur-md border-t border-slate-200 flex justify-between px-1 p-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] z-50 shadow-[0_-8px_16px_-1px_rgba(0,0,0,0.05)] text-[10px]">
             <NavItem icon={<Wallet />} label="Summary" active={activeTab === 'summary'} onClick={() => setActiveTab('summary')} />
             <NavItem icon={<List />} label="Expenses" active={activeTab === 'expenses'} onClick={() => setActiveTab('expenses')} />
+            <NavItem icon={<BarChart3 />} label="Analysis" active={activeTab === 'analysis'} onClick={() => setActiveTab('analysis')} />
             <NavItem icon={<Users />} label="People" active={activeTab === 'people'} onClick={() => setActiveTab('people')} />
             <NavItem icon={<Tags />} label="Categories" active={activeTab === 'categories'} onClick={() => setActiveTab('categories')} />
-            <NavItem icon={<LayoutGrid />} label="Groups" active={activeTab === 'groups'} onClick={() => setActiveTab('groups')} />
           </nav>
-
-          {/* Desktop Top Tabs */}
-          <div className="hidden sm:flex justify-center -mt-8 mb-6 z-10 relative">
-            <div className="bg-white rounded-lg p-1 shadow-sm border border-slate-200 inline-flex">
-              <TabButton icon={<Wallet size={18} />} label="Summary" active={activeTab === 'summary'} onClick={() => setActiveTab('summary')} />
-              <TabButton icon={<List size={18} />} label="Expenses" active={activeTab === 'expenses'} onClick={() => setActiveTab('expenses')} />
-              <TabButton icon={<Users size={18} />} label="People" active={activeTab === 'people'} onClick={() => setActiveTab('people')} />
-              <TabButton icon={<Tags size={18} />} label="Categories" active={activeTab === 'categories'} onClick={() => setActiveTab('categories')} />
-              <TabButton icon={<LayoutGrid size={18} />} label="Groups" active={activeTab === 'groups'} onClick={() => setActiveTab('groups')} />
-            </div>
-          </div>
         </>
       )}
     </div>
@@ -193,11 +200,11 @@ export default function App() {
 
 function NavItem({ icon, label, active, onClick }: { icon: React.ReactNode, label: string, active: boolean, onClick: () => void }) {
   return (
-    <button onClick={onClick} className={`flex flex-col items-center gap-1 w-16 py-1 ${active ? 'text-indigo-600' : 'text-slate-500'} active:scale-95 transition-transform`}>
+    <button onClick={onClick} className={`flex-1 flex flex-col items-center gap-0.5 min-w-0 py-1 ${active ? 'text-indigo-600 font-bold' : 'text-slate-500'} active:scale-95 transition-transform`}>
       <div className={`transition-colors ${active ? 'bg-indigo-50 p-1.5 rounded-full' : 'p-1.5'}`}>
-        {React.cloneElement(icon as React.ReactElement, { size: 24, strokeWidth: active ? 2.5 : 2 })}
+        {React.cloneElement(icon as React.ReactElement, { size: 20, strokeWidth: active ? 2.5 : 2 })}
       </div>
-      <span className="text-[10px] font-medium">{label}</span>
+      <span className="text-[9px] truncate w-full text-center">{label}</span>
     </button>
   );
 }
