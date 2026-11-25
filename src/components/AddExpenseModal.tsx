@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { Expense, User, Category } from '../types';
-import { X } from 'lucide-react';
+import { Expense, User, Category, RecurringExpense } from '../types';
+import { X, Repeat } from 'lucide-react';
 import { IconMap } from './ExpensesList';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -10,14 +10,16 @@ export default function AddExpenseModal({
   onClose, 
   onAdd, 
   onUpdate, 
-  expenseToEdit 
+  expenseToEdit,
+  onAddRecurring,
 }: { 
   users: User[], 
   categories: Category[], 
   onClose: () => void, 
   onAdd?: (e: Expense) => void, 
   onUpdate?: (e: Expense) => void, 
-  expenseToEdit?: Expense 
+  expenseToEdit?: Expense,
+  onAddRecurring?: (rec: RecurringExpense) => void,
 }) {
   const { user } = useAuth();
 
@@ -35,6 +37,15 @@ export default function AddExpenseModal({
   const [involvedUserIds, setInvolvedUserIds] = useState<string[]>(
     expenseToEdit?.involvedUserIds || users.map(u => u.id)
   );
+  const [isRecurring, setIsRecurring] = useState(expenseToEdit?.isRecurring || false);
+  const [recurringDay, setRecurringDay] = useState<number>(() => {
+    try {
+      const d = parseInt(date.substring(8, 10));
+      return isNaN(d) ? 1 : d;
+    } catch {
+      return 1;
+    }
+  });
   const [error, setError] = useState<string | null>(null);
 
   const toggleInvolvedUser = (id: string) => {
@@ -57,6 +68,8 @@ export default function AddExpenseModal({
       return;
     }
 
+    const recId = expenseToEdit?.recurringExpenseId || (isRecurring ? Math.random().toString(36).substring(2, 11) : undefined);
+
     const targetExpense: Expense = {
       id: expenseToEdit?.id || Math.random().toString(36).substr(2, 9),
       description: description.trim(),
@@ -67,8 +80,29 @@ export default function AddExpenseModal({
       splitMode: expenseToEdit?.splitMode || 'equal',
       involvedUserIds,
       isSettled: expenseToEdit?.isSettled || false,
-      createdAt: expenseToEdit?.createdAt || undefined
+      createdAt: expenseToEdit?.createdAt || undefined,
+      isRecurring: isRecurring || !!expenseToEdit?.isRecurring,
+      recurringExpenseId: recId,
+      recurringFrequency: isRecurring ? 'monthly' : undefined,
     };
+
+    if (isRecurring && onAddRecurring && (!expenseToEdit || !expenseToEdit.recurringExpenseId)) {
+      onAddRecurring({
+        id: recId!,
+        description: description.trim(),
+        amount: parseFloat(amount),
+        paidById,
+        categoryId,
+        frequency: 'monthly',
+        dayOfMonth: Math.min(31, Math.max(1, recurringDay)),
+        involvedUserIds,
+        splitMode: 'equal',
+        startDate: date,
+        isActive: true,
+        autoPost: true,
+        lastGeneratedPeriod: date.substring(0, 7),
+      });
+    }
 
     if (expenseToEdit && onUpdate) {
       onUpdate(targetExpense);
@@ -175,7 +209,7 @@ export default function AddExpenseModal({
                     key={u.id}
                     type="button"
                     onClick={() => toggleInvolvedUser(u.id)}
-                    className={`px-3 py-1.5 rounded-full text-sm font-medium border transition-colors flex items-center gap-1.5 ${
+                    className={`px-3 py-1.5 rounded-full text-sm font-medium border transition-colors flex items-center gap-1.5 cursor-pointer ${
                       involvedUserIds.includes(u.id) 
                         ? 'border-indigo-500 bg-indigo-50 text-indigo-700' 
                         : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300'
@@ -186,6 +220,49 @@ export default function AddExpenseModal({
                   </button>
                 ))}
               </div>
+            </div>
+
+            {/* Regular / Recurring Monthly Expense Option */}
+            <div className={`p-3.5 rounded-xl border transition-all ${isRecurring ? 'bg-indigo-50/70 border-indigo-200 shadow-sm' : 'bg-slate-50 border-slate-200/80'}`}>
+              <label className="flex items-center justify-between cursor-pointer">
+                <div className="flex items-center gap-2">
+                  <div className={`p-1.5 rounded-lg ${isRecurring ? 'bg-indigo-600 text-white' : 'bg-slate-200 text-slate-600'}`}>
+                    <Repeat size={16} />
+                  </div>
+                  <div>
+                    <span className="text-xs font-bold text-slate-800">
+                      Regular / Recurring Expense
+                    </span>
+                    <p className="text-[11px] text-slate-500">
+                      Repeats every month with fixed time &amp; cost (e.g. Rent, WiFi)
+                    </p>
+                  </div>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={isRecurring}
+                  onChange={(e) => setIsRecurring(e.target.checked)}
+                  className="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500 cursor-pointer"
+                />
+              </label>
+
+              {isRecurring && (
+                <div className="mt-3 pt-3 border-t border-indigo-100 flex items-center justify-between gap-3 animate-in fade-in slide-in-from-top-1 text-xs">
+                  <span className="text-slate-600 font-medium">Due day each month:</span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-slate-500">Day</span>
+                    <input
+                      type="number"
+                      min="1"
+                      max="31"
+                      value={recurringDay}
+                      onChange={(e) => setRecurringDay(parseInt(e.target.value) || 1)}
+                      className="w-16 px-2.5 py-1 text-center font-bold text-slate-800 bg-white border border-indigo-200 rounded-lg shadow-inner focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                    />
+                    <span className="text-indigo-700 font-bold">of every month</span>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 

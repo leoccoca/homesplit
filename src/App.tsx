@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Expense, User, Category, Group } from './types';
+import { Expense, User, Category, Group, RecurringExpense } from './types';
 import Dashboard from './components/Dashboard';
 import ExpensesList from './components/ExpensesList';
 import Header from './components/Header';
@@ -19,6 +19,7 @@ export default function App() {
   const [users, setUsers] = useState<User[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [recurringExpenses, setRecurringExpenses] = useState<RecurringExpense[]>([]);
   const [activeTab, setActiveTab] = useState<'summary' | 'expenses' | 'analysis' | 'people' | 'categories' | 'groups'>('summary');
 
   const [inviteId, setInviteId] = useState<string | null>(null);
@@ -89,11 +90,31 @@ export default function App() {
       console.warn("Firestore sync error for categories, using local state", error);
     });
 
+    const unsubscribeRecurring = onSnapshot(query(collection(db, `groups/${groupId}/recurringExpenses`)), (snapshot) => {
+      const fbRecurring: RecurringExpense[] = [];
+      snapshot.forEach((doc) => {
+        fbRecurring.push(doc.data() as RecurringExpense);
+      });
+      setRecurringExpenses(fbRecurring);
+      try {
+        localStorage.setItem(`recurringExpenses_${groupId}`, JSON.stringify(fbRecurring));
+      } catch {}
+    }, (error) => {
+      console.warn("Firestore sync error for recurring expenses, using local state", error);
+      const saved = localStorage.getItem(`recurringExpenses_${groupId}`);
+      if (saved) {
+        try {
+          setRecurringExpenses(JSON.parse(saved));
+        } catch {}
+      }
+    });
+
     return () => {
       unsubscribeGroup();
       unsubscribeExpenses();
       unsubscribeUsers();
       unsubscribeCategories();
+      unsubscribeRecurring();
     };
   }, [user, groupId]);
 
@@ -158,6 +179,103 @@ export default function App() {
     }
   };
 
+  const handleAddRecurring = async (rec: RecurringExpense, postCurrentMonth?: boolean) => {
+    setRecurringExpenses(prev => [...prev.filter(r => r.id !== rec.id), rec]);
+    try {
+      localStorage.setItem(`recurringExpenses_${groupId}`, JSON.stringify([...recurringExpenses.filter(r => r.id !== rec.id), rec]));
+    } catch {}
+
+    if (user && groupId) {
+      try {
+        await setDoc(doc(db, `groups/${groupId}/recurringExpenses`, rec.id), {
+          ...rec,
+          createdAt: serverTimestamp()
+        });
+      } catch (error) {
+        console.error("Failed to sync new recurring expense to FB", error);
+      }
+    }
+
+    if (postCurrentMonth) {
+      await handlePostRecurringExpense(rec);
+    }
+  };
+
+  const handleUpdateRecurring = async (rec: RecurringExpense) => {
+    setRecurringExpenses(prev => prev.map(r => r.id === rec.id ? rec : r));
+    try {
+      localStorage.setItem(`recurringExpenses_${groupId}`, JSON.stringify(recurringExpenses.map(r => r.id === rec.id ? rec : r)));
+    } catch {}
+
+    if (user && groupId) {
+      try {
+        await updateDoc(doc(db, `groups/${groupId}/recurringExpenses`, rec.id), {
+          ...rec
+        });
+      } catch (error) {
+        console.error("Failed to update recurring expense in FB", error);
+      }
+    }
+  };
+
+  const handleDeleteRecurring = async (id: string) => {
+    setRecurringExpenses(prev => prev.filter(r => r.id !== id));
+    try {
+      localStorage.setItem(`recurringExpenses_${groupId}`, JSON.stringify(recurringExpenses.filter(r => r.id !== id)));
+    } catch {}
+
+    if (user && groupId) {
+      try {
+        await deleteDoc(doc(db, `groups/${groupId}/recurringExpenses`, id));
+      } catch (error) {
+        console.error("Failed to delete recurring expense from FB", error);
+      }
+    }
+  };
+
+  const handleToggleRecurringActive = async (id: string) => {
+    const target = recurringExpenses.find(r => r.id === id);
+    if (!target) return;
+    const updated = { ...target, isActive: !target.isActive };
+    handleUpdateRecurring(updated);
+  };
+
+  const handlePostRecurringExpense = async (rec: RecurringExpense, targetDate?: string) => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(rec.dayOfMonth).padStart(2, '0');
+    const dateStr = targetDate || `${year}-${month}-${day}`;
+
+    // Prevent duplicate: check if already exists for this month
+    const monthKey = `${year}-${month}`;
+    const alreadyExists = expenses.some(e => 
+      (e.recurringExpenseId === rec.id || e.description.toLowerCase().trim() === rec.description.toLowerCase().trim()) && 
+      e.date.startsWith(monthKey)
+    );
+    if (alreadyExists) return;
+
+    const newExpense: Expense = {
+      id: Math.random().toString(36).substring(2, 11),
+      description: rec.description,
+      amount: rec.amount,
+      paidById: rec.paidById,
+      categoryId: rec.categoryId,
+      date: new Date(dateStr).toISOString(),
+      splitMode: rec.splitMode || 'equal',
+      involvedUserIds: rec.involvedUserIds,
+      isSettled: false,
+      isRecurring: true,
+      recurringExpenseId: rec.id,
+      recurringFrequency: rec.frequency,
+    };
+
+    await handleAddExpense(newExpense);
+
+    const updatedRec = { ...rec, lastGeneratedPeriod: monthKey };
+    await handleUpdateRecurring(updatedRec);
+  };
+
   return (
     <div className="min-h-screen flex flex-col bg-slate-50">
       <Header activeTab={activeTab} setActiveTab={setActiveTab} showNavigation={!!user && !!groupId} groupId={groupId} onSelectGroup={handleSelectGroup} />
@@ -176,8 +294,34 @@ export default function App() {
       ) : (
         <>
           <main className="flex-1 w-full max-w-5xl mx-auto p-4 sm:p-6 pb-24 sm:pb-6">
-            {activeTab === 'summary' && <Dashboard expenses={expenses} users={users} categories={categories} onAdd={handleAddExpense} />}
-            {activeTab === 'expenses' && <ExpensesList expenses={expenses} users={users} categories={categories} onAdd={handleAddExpense} onDelete={handleDeleteExpense} onToggleSettled={handleToggleSettled} onUpdate={handleUpdateExpense} />}
+            {activeTab === 'summary' && (
+              <Dashboard 
+                expenses={expenses} 
+                users={users} 
+                categories={categories} 
+                recurringExpenses={recurringExpenses}
+                onAdd={handleAddExpense}
+                onNavigateToRegular={() => setActiveTab('expenses')}
+                onPostRecurringExpense={handlePostRecurringExpense}
+              />
+            )}
+            {activeTab === 'expenses' && (
+              <ExpensesList 
+                expenses={expenses} 
+                users={users} 
+                categories={categories} 
+                recurringExpenses={recurringExpenses}
+                onAdd={handleAddExpense} 
+                onDelete={handleDeleteExpense} 
+                onToggleSettled={handleToggleSettled} 
+                onUpdate={handleUpdateExpense}
+                onAddRecurring={handleAddRecurring}
+                onUpdateRecurring={handleUpdateRecurring}
+                onDeleteRecurring={handleDeleteRecurring}
+                onToggleRecurringActive={handleToggleRecurringActive}
+                onPostRecurringExpense={handlePostRecurringExpense}
+              />
+            )}
             {activeTab === 'analysis' && <AnalysisTab expenses={expenses} users={users} categories={categories} />}
             {activeTab === 'people' && <PeopleTab users={users} setUsers={setUsers} expenses={expenses} groupId={groupId} groupName={currentGroup?.name} />}
             {activeTab === 'categories' && <CategoriesTab categories={categories} setCategories={setCategories} expenses={expenses} groupId={groupId} />}

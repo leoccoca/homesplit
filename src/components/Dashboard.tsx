@@ -1,13 +1,29 @@
 import React, { useMemo, useState } from 'react';
-import { Expense, User, Category } from '../types';
+import { Expense, User, Category, RecurringExpense } from '../types';
 import { calculateBalances, calculateSettlements } from '../lib/splitLogic';
 import { formatCurrency, parseLocalDate } from '../lib/utils';
-import { ArrowRight, ArrowUpRight, ArrowDownRight, ChevronLeft, ChevronRight, CheckCircle2 } from 'lucide-react';
+import { ArrowRight, ArrowUpRight, ArrowDownRight, ChevronLeft, ChevronRight, CheckCircle2, Repeat, Clock, Plus, Calendar } from 'lucide-react';
 import { format } from 'date-fns';
 import SettleUpModal from './SettleUpModal';
 import { AnimatePresence } from 'motion/react';
 
-export default function Dashboard({ expenses, users, categories, onAdd }: { expenses: Expense[], users: User[], categories: Category[], onAdd?: (e: Expense) => void }) {
+export default function Dashboard({ 
+  expenses, 
+  users, 
+  categories, 
+  recurringExpenses = [],
+  onAdd,
+  onNavigateToRegular,
+  onPostRecurringExpense,
+}: { 
+  expenses: Expense[];
+  users: User[];
+  categories: Category[];
+  recurringExpenses?: RecurringExpense[];
+  onAdd?: (e: Expense) => void;
+  onNavigateToRegular?: () => void;
+  onPostRecurringExpense?: (r: RecurringExpense) => void;
+}) {
   const [activeSettle, setActiveSettle] = useState<{ fromUser: User; toUser: User; amount: number } | null>(null);
   const [expandedSettlement, setExpandedSettlement] = useState<number | null>(null);
 
@@ -41,14 +57,19 @@ export default function Dashboard({ expenses, users, categories, onAdd }: { expe
   const balances = useMemo(() => calculateBalances(expenses, users, true), [expenses, users]);
   const settlements = useMemo(() => calculateSettlements(balances, users), [balances, users]);
 
+  // Actual spending expenses in this month (exclude repayments / settle-up transfers)
+  const currentMonthSpending = useMemo(() => {
+    return currentMonthExpenses.filter(e => e.categoryId !== 'repayment' && !e.isRepayment);
+  }, [currentMonthExpenses]);
+
   // Total spent in this month
-  const totalSpent = useMemo(() => currentMonthExpenses.reduce((acc, e) => acc + e.amount, 0), [currentMonthExpenses]);
+  const totalSpent = useMemo(() => currentMonthSpending.reduce((acc, e) => acc + e.amount, 0), [currentMonthSpending]);
 
   // Spending per member in this month (split amount)
   const memberSpending = useMemo(() => {
     const spending: Record<string, number> = {};
     users.forEach(u => spending[u.id] = 0);
-    currentMonthExpenses.forEach(e => {
+    currentMonthSpending.forEach(e => {
       const involvedIds = e.involvedUserIds || users.map(u => u.id);
       const splitAmount = e.amount / involvedIds.length;
       involvedIds.forEach(id => {
@@ -58,7 +79,7 @@ export default function Dashboard({ expenses, users, categories, onAdd }: { expe
       });
     });
     return spending;
-  }, [currentMonthExpenses, users]);
+  }, [currentMonthSpending, users]);
 
   const onesOwed = useMemo(() => users.filter(u => (balances[u.id] || 0) > 0.01).sort((a, b) => balances[b.id] - balances[a.id]), [users, balances]);
   const onesOwing = useMemo(() => users.filter(u => (balances[u.id] || 0) < -0.01).sort((a, b) => balances[a.id] - balances[b.id]), [users, balances]);
@@ -79,6 +100,16 @@ export default function Dashboard({ expenses, users, categories, onAdd }: { expe
       return selectedMonth;
     }
   }, [selectedMonth]);
+
+  const totalRecurringMonthly = useMemo(() => {
+    return recurringExpenses.filter(r => r.isActive).reduce((sum, r) => sum + r.amount, 0);
+  }, [recurringExpenses]);
+
+  const getOrdinal = (n: number) => {
+    const s = ['th', 'st', 'nd', 'rd'];
+    const v = n % 100;
+    return n + (s[(v - 20) % 10] || s[v] || s[0]);
+  };
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -192,6 +223,88 @@ export default function Dashboard({ expenses, users, categories, onAdd }: { expe
         </div>
 
         <div className="space-y-6">
+          {/* Regular Monthly Fixed Bills Card */}
+          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="p-2 bg-indigo-50 text-indigo-600 rounded-xl">
+                  <Repeat size={16} className="stroke-[2.5]" />
+                </div>
+                <div>
+                  <h4 className="text-sm font-bold text-slate-800">Regular Monthly Bills</h4>
+                  <p className="text-[11px] text-slate-400">Fixed time &amp; cost commitments</p>
+                </div>
+              </div>
+              <span className="text-sm font-extrabold text-indigo-600">
+                {formatCurrency(totalRecurringMonthly)}
+                <span className="text-[10px] font-normal text-slate-400">/mo</span>
+              </span>
+            </div>
+
+            {recurringExpenses.length === 0 ? (
+              <div className="bg-slate-50 p-3.5 rounded-xl text-center border border-dashed border-slate-200 text-xs text-slate-500">
+                <p>No regular bills set up yet.</p>
+                {onNavigateToRegular && (
+                  <button
+                    onClick={onNavigateToRegular}
+                    className="mt-1.5 text-xs text-indigo-600 font-bold hover:underline cursor-pointer inline-block"
+                  >
+                    + Set up Rent, WiFi, or Netflix
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {recurringExpenses.slice(0, 4).map(r => {
+                  const isPosted = currentMonthExpenses.some(e => 
+                    (e.recurringExpenseId === r.id || e.description.toLowerCase().trim() === r.description.toLowerCase().trim())
+                  );
+                  return (
+                    <div key={r.id} className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 border border-slate-100 text-xs">
+                      <div className="min-w-0 flex-1 pr-2">
+                        <p className="font-bold text-slate-800 truncate">{r.description}</p>
+                        <p className="text-[10px] text-slate-400 flex items-center gap-1 mt-0.5">
+                          <Calendar size={11} className="text-slate-400" />
+                          Every {getOrdinal(r.dayOfMonth)} • {formatCurrency(r.amount)}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        {isPosted ? (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
+                            <CheckCircle2 size={11} /> Recorded
+                          </span>
+                        ) : (
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
+                              Due
+                            </span>
+                            {onPostRecurringExpense && (
+                              <button
+                                onClick={() => onPostRecurringExpense(r)}
+                                className="px-2 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded text-[10px] font-bold transition-all active:scale-95 cursor-pointer"
+                              >
+                                Post
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {onNavigateToRegular && (
+                  <button
+                    onClick={onNavigateToRegular}
+                    className="w-full text-center py-1.5 text-xs font-bold text-indigo-600 hover:text-indigo-800 transition-colors cursor-pointer block"
+                  >
+                    Manage all {recurringExpenses.length} regular bills →
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+
           {/* Settlements */}
           {settlements.length > 0 && (
             <div className="bg-indigo-900 p-6 rounded-2xl text-white shadow-xl relative overflow-hidden">
@@ -320,7 +433,7 @@ export default function Dashboard({ expenses, users, categories, onAdd }: { expe
             </div>
           )}
           
-          {settlements.length === 0 && expenses.some(e => !e.isSettled) === false && (
+          {settlements.length === 0 && (
             <div className="bg-emerald-50 text-emerald-600 p-8 rounded-2xl border border-emerald-100 flex flex-col items-center justify-center font-medium shadow-sm gap-3 text-center">
               <CheckCircle2 size={32} className="text-emerald-500" />
               <div>

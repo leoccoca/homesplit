@@ -57,7 +57,10 @@ export default function Header({ activeTab, setActiveTab, showNavigation, groupI
               <Home size={20} strokeWidth={2.5} />
             </div>
             <div>
-              <h1 className="text-xl font-bold tracking-tight text-slate-800">SplitMate</h1>
+              <div className="flex items-center gap-1.5">
+                <h1 className="text-xl font-bold tracking-tight text-slate-800">SplitMate</h1>
+                <span className="text-[10px] font-semibold text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">v{__APP_VERSION__}</span>
+              </div>
               <p className="text-xs text-slate-500 font-medium hidden sm:block">The Expense Tracker</p>
             </div>
           </div>
@@ -181,6 +184,9 @@ export default function Header({ activeTab, setActiveTab, showNavigation, groupI
                         <LogOut size={14} />
                         Log Out
                       </button>
+                      <div className="px-4 py-1.5 text-[10px] text-slate-400 border-t border-slate-100 mt-1">
+                        Version {__APP_VERSION__}
+                      </div>
                     </div>
                   </div>
                 )}

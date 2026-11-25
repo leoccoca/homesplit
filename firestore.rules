@@ -106,6 +106,31 @@ service cloud.firestore {
              (data.get('userId', null) == null || data.userId == request.auth.uid);
     }
 
+    function isValidRecurringExpense(data) {
+      return data.keys().hasAll(['id', 'description', 'amount', 'paidById', 'categoryId', 'frequency', 'dayOfMonth', 'involvedUserIds', 'createdAt']) &&
+             data.id is string && data.id.size() <= 128 &&
+             data.description is string && data.description.size() > 0 && data.description.size() <= 200 &&
+             data.amount is number && data.amount >= 0 &&
+             data.paidById is string && data.paidById.size() <= 128 &&
+             data.categoryId is string && data.categoryId.size() <= 128 &&
+             data.frequency is string && data.frequency in ['monthly', 'weekly', 'yearly'] &&
+             data.dayOfMonth is number && data.dayOfMonth >= 1 && data.dayOfMonth <= 31 &&
+             data.involvedUserIds is list && data.involvedUserIds.size() > 0 && data.involvedUserIds.size() <= 100 &&
+             (data.get('isActive', true) is bool) &&
+             data.createdAt == request.time;
+    }
+
+    function isValidRecurringExpenseUpdate(data) {
+      return data.description is string && data.description.size() > 0 && data.description.size() <= 200 &&
+             data.amount is number && data.amount >= 0 &&
+             data.paidById is string && data.paidById.size() <= 128 &&
+             data.categoryId is string && data.categoryId.size() <= 128 &&
+             data.frequency is string &&
+             data.dayOfMonth is number &&
+             data.involvedUserIds is list &&
+             (data.get('isActive', true) is bool);
+    }
+
     match /groups/{groupId} {
       allow create: if isSignedIn() && isValidId(groupId) && isValidGroup(incoming()) && request.auth.uid in incoming().members;
       allow read: if isSignedIn() && request.auth.uid in existing().members;
@@ -143,6 +168,13 @@ service cloud.firestore {
         allow create: if isGroupMember(groupId) && isValidId(expenseId) && isValidExpense(incoming()) && (request.auth.uid in incoming().involvedUserIds || request.auth.uid == incoming().paidById);
         allow update: if isGroupMember(groupId) && isValidId(expenseId) && isValidExpenseUpdate(incoming());
         allow delete: if isGroupMember(groupId) && isValidId(expenseId) && (existing().paidById == request.auth.uid || request.auth.uid in existing().involvedUserIds);
+      }
+
+      match /recurringExpenses/{recurringExpenseId} {
+        allow read: if isGroupMember(groupId);
+        allow create: if isGroupMember(groupId) && isValidId(recurringExpenseId) && isValidRecurringExpense(incoming());
+        allow update: if isGroupMember(groupId) && isValidId(recurringExpenseId) && isValidRecurringExpenseUpdate(incoming());
+        allow delete: if isGroupMember(groupId) && isValidId(recurringExpenseId);
       }
     }
 

@@ -53,6 +53,27 @@
       },
       "required": ["description", "amount", "paidById", "categoryId", "date", "splitMode", "involvedUserIds", "createdAt"]
     },
+    "RecurringExpense": {
+      "title": "RecurringExpense",
+      "description": "A regular recurring fixed expense schedule",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "description": { "type": "string" },
+        "amount": { "type": "number" },
+        "paidById": { "type": "string" },
+        "categoryId": { "type": "string" },
+        "frequency": { "type": "string" },
+        "dayOfMonth": { "type": "number" },
+        "involvedUserIds": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "isActive": { "type": "boolean" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "description", "amount", "paidById", "categoryId", "frequency", "dayOfMonth", "involvedUserIds", "createdAt"]
+    },
     "Feedback": {
       "title": "Feedback",
       "description": "Feedback from users",
@@ -83,6 +104,10 @@
     "/groups/{groupId}/expenses/{expenseId}": {
       "schema": { "$ref": "#/entities/Expense" },
       "description": "Expenses belonging to the group"
+    },
+    "/groups/{groupId}/recurringExpenses/{recurringExpenseId}": {
+      "schema": { "$ref": "#/entities/RecurringExpense" },
+      "description": "Recurring regular expenses of the group"
     }
   }
 }
